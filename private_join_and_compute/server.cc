@@ -17,8 +17,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <thread>  // NOLINT
+#include <thread> // NOLINT
 #include <utility>
+#include <fstream>
+#include <sstream>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
@@ -38,12 +40,30 @@ ABSL_FLAG(std::string, port, "0.0.0.0:10501", "Port on which to listen");
 ABSL_FLAG(std::string, server_data_file, "",
           "The file from which to read the server database.");
 
-int RunServer() {
+std::string read_string_from_file(const std::string &file_path)
+{
+  std::ifstream input_stream;
+  input_stream.open(file_path);
+
+  if (input_stream.fail())
+  {
+    throw std::runtime_error("Failed to open file" + file_path);
+  }
+
+  std::stringstream buffer;
+  buffer << input_stream.rdbuf();
+
+  return buffer.str();
+}
+
+int RunServer()
+{
   std::cout << "Server: loading data... " << std::endl;
   auto maybe_server_identifiers =
       ::private_join_and_compute::ReadServerDatasetFromFile(
           absl::GetFlag(FLAGS_server_data_file));
-  if (!maybe_server_identifiers.ok()) {
+  if (!maybe_server_identifiers.ok())
+  {
     std::cerr << "RunServer: failed " << maybe_server_identifiers.status()
               << std::endl;
     return 1;
@@ -58,23 +78,39 @@ int RunServer() {
       std::move(server));
 
   ::grpc::ServerBuilder builder;
-  // Consider grpc::SslServerCredentials if not running locally.
+  std::string key;
+  std::string cert;
+  std::string root;
+
+  cert = read_string_from_file("server.crt");
+  key = read_string_from_file("server.key");
+  root = read_string_from_file("ca.crt");
+
+  grpc::SslServerCredentialsOptions::PemKeyCertPair keycert =
+      {
+          key,
+          cert};
+
+  grpc::SslServerCredentialsOptions sslOps;
+  sslOps.pem_root_certs = root;
+  sslOps.pem_key_cert_pairs.push_back(keycert);
   builder.AddListeningPort(absl::GetFlag(FLAGS_port),
-                           ::grpc::experimental::LocalServerCredentials(
-                               grpc_local_connect_type::LOCAL_TCP));
+                           ::grpc::SslServerCredentials(sslOps));
   builder.RegisterService(&service);
   std::unique_ptr<::grpc::Server> grpc_server(builder.BuildAndStart());
 
   // Run the server on a background thread.
   std::thread grpc_server_thread(
-      [](::grpc::Server* grpc_server_ptr) {
+      [](::grpc::Server *grpc_server_ptr)
+      {
         std::cout << "Server: listening on " << absl::GetFlag(FLAGS_port)
                   << std::endl;
         grpc_server_ptr->Wait();
       },
       grpc_server.get());
 
-  while (!service.protocol_finished()) {
+  while (!service.protocol_finished())
+  {
     // Wait for the server to be done, and then shut the server down.
   }
 
@@ -86,7 +122,8 @@ int RunServer() {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
   absl::ParseCommandLine(argc, argv);
 
   return RunServer();
