@@ -21,6 +21,9 @@
 #include <fstream>
 #include <sstream>
 
+#include <chrono>
+using namespace std::chrono;
+
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/strings/str_cat.h"
@@ -47,22 +50,6 @@ ABSL_FLAG(
     "The bit-length of the modulus to use for Paillier encryption. The modulus "
     "will be the product of two safe primes, each of size "
     "paillier_modulus_size/2.");
-
-std::string read_string_from_file(const std::string &file_path)
-{
-  std::ifstream input_stream;
-  input_stream.open(file_path);
-
-  if (input_stream.fail())
-  {
-    throw std::runtime_error("Failed to open file" + file_path);
-  }
-
-  std::stringstream buffer;
-  buffer << input_stream.rdbuf();
-
-  return buffer.str();
-}
 
 namespace private_join_and_compute
 {
@@ -121,6 +108,8 @@ namespace private_join_and_compute
       auto client_identifiers_and_associated_values =
           std::move(maybe_client_identifiers_and_associated_values.value());
 
+      auto start = high_resolution_clock::now();
+
       std::cout << "Client: Generating keys..." << std::endl;
       std::unique_ptr<::private_join_and_compute::ProtocolClient> client =
           std::make_unique<
@@ -129,22 +118,16 @@ namespace private_join_and_compute
               std::move(client_identifiers_and_associated_values.second),
               absl::GetFlag(FLAGS_paillier_modulus_size));
 
-      std::string key;
-      std::string cert;
-      std::string root;
+      auto stop_gen = high_resolution_clock::now();
+      auto duration = duration_cast<seconds>(stop_gen - start);
 
-      cert = read_string_from_file("client.crt");
-      key = read_string_from_file("client.key");
-      root = read_string_from_file("ca.crt");
+      std::cout << "Gen keys finished in " << duration.count() << " seconds." << std::endl;
 
-      grpc::SslCredentialsOptions opts =
-          {
-              root,
-              key,
-              cert};
+      // Consider grpc::SslServerCredentials if not running locally.
       std::unique_ptr<PrivateJoinAndComputeRpc::Stub> stub =
           PrivateJoinAndComputeRpc::NewStub(::grpc::CreateChannel(
-              absl::GetFlag(FLAGS_port), ::grpc::SslCredentials(opts)));
+              absl::GetFlag(FLAGS_port), ::grpc::experimental::LocalCredentials(
+                                             grpc_local_connect_type::LOCAL_TCP)));
       InvokeServerHandleClientMessageSink invoke_server_handle_message_sink(
           std::move(stub));
 
@@ -210,6 +193,11 @@ namespace private_join_and_compute
                   << client_print_output_status << std::endl;
         return 1;
       }
+
+      auto stop = high_resolution_clock::now();
+      duration = duration_cast<seconds>(stop - start);
+
+      std::cout << "Program finished in " << duration.count() << " seconds." << std::endl;
 
       return 0;
     }
