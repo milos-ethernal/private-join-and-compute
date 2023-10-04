@@ -21,6 +21,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 
 #include "absl/memory/memory.h"
 #include "private_join_and_compute/crypto/ec_commutative_cipher.h"
@@ -63,6 +64,20 @@ namespace private_join_and_compute
     }
 
     return result;
+  }
+
+  // Helper method
+  // Get current date/time, format is yyMMddHH:mm:ss
+  const std::string currentDateTime()
+  {
+    time_t now = time(0);
+    struct tm tstruct;
+    char buf[80];
+    tstruct = *localtime(&now);
+
+    strftime(buf, sizeof(buf), "%y%m%d%X", &tstruct);
+
+    return buf;
   }
 
   StatusOr<PrivateIntersectionSumServerMessage::ServerRoundTwo>
@@ -135,11 +150,20 @@ namespace private_join_and_compute
           public_paillier.Add(sum, ctx_->CreateBigNum(element.associated_data()));
     }
 
+    // Generate computation proof
+    std::string date_time = currentDateTime();
+    date_time.erase(remove(date_time.begin(), date_time.end(), ':'), date_time.end());
+    int64_t proof_number;
+    char *end;
+    proof_number = strtoll(date_time.c_str(), &end, 10) * 1000000 + rand() % 1000000;
+
     *result.mutable_encrypted_sum() = sum.ToBytes();
     result.set_intersection_size(intersection.size());
+    result.set_computation_proof(proof_number);
 
     std::cout << "Result sent to the client: " << std::endl
-              << "Intersection size = " << intersection.size() << std::endl;
+              << "Intersection size = " << intersection.size() << std::endl
+              << "Computation proof = " << proof_number << std::endl;
     return result;
   }
 
