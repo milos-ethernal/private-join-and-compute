@@ -24,6 +24,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "absl/memory/memory.h"
 
@@ -43,17 +44,42 @@ namespace private_join_and_compute
                                                                                               NID_X9_62_prime256v1, ECCommutativeCipher::HashType::SHA256)
                                                                                               .value()))
   {
-    // Generate safe primes in parallel
-    std::thread p_thread([this, modulus_size]()
-                         { p_ = ctx_->GenerateSafePrime(modulus_size / 2);
-                            std::cout << "Finished P = " << p_ << std::endl; });
+    std::ifstream ifsp("p_bignum.txt");
+    if (ifsp.good())
+    {
+      std::string p_content((std::istreambuf_iterator<char>(ifsp)),
+                            (std::istreambuf_iterator<char>()));
+      p_ = ctx_->CreateBigNum(p_content);
+      std::cout << p_ << std::endl;
 
-    std::thread q_thread([this, modulus_size]()
-                         { q_ = ctx_->GenerateSafePrime(modulus_size / 2);
-                         std::cout << "Finished Q = " << q_ << std::endl; });
+      std::ifstream ifsq("q_bignum.txt");
+      std::string q_content((std::istreambuf_iterator<char>(ifsq)),
+                            (std::istreambuf_iterator<char>()));
+      q_ = ctx_->CreateBigNum(q_content);
+      std::cout << q_ << std::endl;
+    }
+    else
+    {
+      // Generate safe primes in parallel
+      std::thread p_thread([this, modulus_size]()
+                           { p_ = ctx_->GenerateSafePrime(modulus_size / 2);
+                         std::cout << p_ << std::endl;
+                         std::ofstream myfile;
+                         myfile.open ("p_bignum.txt");
+                          myfile << p_.ToBytes();
+                          myfile.close(); });
 
-    p_thread.join();
-    q_thread.join();
+      std::thread q_thread([this, modulus_size]()
+                           { q_ = ctx_->GenerateSafePrime(modulus_size / 2); 
+                           std::cout << q_ << std::endl;
+                         std::ofstream myfile;
+                         myfile.open ("q_bignum.txt");
+                          myfile << q_.ToBytes();
+                          myfile.close(); });
+
+      p_thread.join();
+      q_thread.join();
+    }
   }
 
   StatusOr<PrivateIntersectionSumClientMessage::ClientRoundOne>
